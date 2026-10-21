@@ -7,6 +7,7 @@
 #include <linux/sched.h>
 #include <linux/types.h>
 #include <linux/uidgid.h>
+#include <linux/uaccess.h>
 
 #define POLICY_MAX_PAIRS \
 	65536 /* 23k+ pairs appeared in the field: see the host test */
@@ -200,5 +201,14 @@ static inline unsigned long arm64_bl_target(unsigned long pc, u32 insn)
 
 int netlink_init(void);
 void netlink_exit(void);
+
+bool pidhide_has(int pid);
+bool pidhide_name_hidden(const char *name);
+bool pidhide_open_hidden(int dfd, const char __user *filename);
+bool pidhide_pid_arg(int pid);
+long pidhide_filter_dirents(int fd, void __user *dirp, long nread);
+void pidhide_apply_str(const char *val);
+void pidhide_apply_cmdlines(const char *val);
+void pidhide_init(void);
 
 #endif /* UIDFAKE_H */
