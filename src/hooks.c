@@ -158,13 +158,6 @@ asmlinkage long uidfake_getpriority(const struct pt_regs *regs);
 asmlinkage long uidfake_setpriority(const struct pt_regs *regs);
 asmlinkage long uidfake_ioprio_get(const struct pt_regs *regs);
 asmlinkage long uidfake_ioprio_set(const struct pt_regs *regs);
-asmlinkage long uidfake_getdents64(const struct pt_regs *regs);
-asmlinkage long uidfake_openat(const struct pt_regs *regs);
-asmlinkage long uidfake_newfstatat(const struct pt_regs *regs);
-asmlinkage long uidfake_pidfd_open(const struct pt_regs *regs);
-#ifdef __NR_openat2
-asmlinkage long uidfake_openat2(const struct pt_regs *regs);
-#endif
 
 /* The fallback: only installed when the LSM hook cannot be taken (see below). */
 asmlinkage long uidfake_setuid(const struct pt_regs *regs);
@@ -191,24 +184,6 @@ static struct hook_entry g_hook[] = {
 	  -1, NULL, NULL },
 	{ __NR_ioprio_set, uidfake_ioprio_set, NULL, "__arm64_sys_ioprio_set",
 	  -1, NULL, NULL },
-};
-
-/* Optional: failure here does not unwind the uid hooks. */
-static struct hook_entry g_phook[] = {
-	{ __NR_getdents64, uidfake_getdents64, NULL, "__arm64_sys_getdents64",
-	  -1, NULL, NULL },
-	{ __NR_openat, uidfake_openat, NULL, "__arm64_sys_openat", -1, NULL,
-	  NULL },
-	{ __NR_newfstatat, uidfake_newfstatat, NULL, "__arm64_sys_newfstatat",
-	  -1, NULL, NULL },
-#ifdef __NR_pidfd_open
-	{ __NR_pidfd_open, uidfake_pidfd_open, NULL, "__arm64_sys_pidfd_open",
-	  -1, NULL, NULL },
-#endif
-#ifdef __NR_openat2
-	{ __NR_openat2, uidfake_openat2, NULL, "__arm64_sys_openat2", -1, NULL,
-	  NULL },
-#endif
 };
 
 /*
@@ -356,75 +331,6 @@ asmlinkage long uidfake_ioprio_set(const struct pt_regs *regs)
 {
 	return uid_hook(regs, IOPRIO_WHO_USER, g_hook[3].orig);
 }
-
-asmlinkage long __nocfi uidfake_getdents64(const struct pt_regs *regs)
-{
-	long ret;
-
-	if (!g_phook[0].orig)
-		return -ENOSYS;
-	ret = g_phook[0].orig(regs);
-	return pidhide_filter_dirents((int)regs->regs[0],
-				      (void __user *)regs->regs[1], ret);
-}
-
-asmlinkage long __nocfi uidfake_openat(const struct pt_regs *regs)
-{
-	if (!g_phook[1].orig)
-		return -ENOSYS;
-	if (pidhide_open_hidden((int)regs->regs[0],
-				(const char __user *)regs->regs[1]))
-		return -ENOENT;
-	return g_phook[1].orig(regs);
-}
-
-asmlinkage long __nocfi uidfake_newfstatat(const struct pt_regs *regs)
-{
-	if (!g_phook[2].orig)
-		return -ENOSYS;
-	if (pidhide_open_hidden((int)regs->regs[0],
-				(const char __user *)regs->regs[1]))
-		return -ENOENT;
-	return g_phook[2].orig(regs);
-}
-
-#ifdef __NR_pidfd_open
-asmlinkage long __nocfi uidfake_pidfd_open(const struct pt_regs *regs)
-{
-	unsigned int i;
-
-	for (i = 0; i < ARRAY_SIZE(g_phook); i++) {
-		if (g_phook[i].ours == uidfake_pidfd_open) {
-			if (!g_phook[i].orig)
-				return -ENOSYS;
-			if (pidhide_pid_arg((int)regs->regs[0]))
-				return -ESRCH;
-			return g_phook[i].orig(regs);
-		}
-	}
-	return -ENOSYS;
-}
-#endif
-
-#ifdef __NR_openat2
-asmlinkage long __nocfi uidfake_openat2(const struct pt_regs *regs)
-{
-	unsigned int i;
-
-	for (i = 0; i < ARRAY_SIZE(g_phook); i++) {
-		if (g_phook[i].ours == uidfake_openat2) {
-			if (!g_phook[i].orig)
-				return -ENOSYS;
-			if (pidhide_open_hidden(
-				    (int)regs->regs[0],
-				    (const char __user *)regs->regs[1]))
-				return -ENOENT;
-			return g_phook[i].orig(regs);
-		}
-	}
-	return -ENOSYS;
-}
-#endif
 
 #ifdef CONFIG_COMPAT
 asmlinkage long uidfake32_getpriority(const struct pt_regs *regs)
@@ -825,8 +731,6 @@ static int patch_tables(void)
 	}
 	pr_info("uidfake: %u uid syscall(s) hooked in sys_call_table\n", n);
 	uidfake_status_set_hooks(n, 0);
-	n = patch_entries(main_table, g_phook, ARRAY_SIZE(g_phook), false);
-	pr_info("uidfake: %u pidhide syscall(s) hooked\n", n);
 	/*
    * Off by default: the probe exercises the sid->context call, and if the call
    * shape were ever
@@ -932,7 +836,6 @@ void hooks_remove(void)
 	if (!main_table)
 		return;
 
-	unpatch_entries(main_table, g_phook, ARRAY_SIZE(g_phook));
 	unpatch_entries(main_table, g_hook, ARRAY_SIZE(g_hook));
 	if (g_lsm_failed) {
 #ifdef CONFIG_COMPAT

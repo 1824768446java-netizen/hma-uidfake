@@ -53,7 +53,6 @@ static int __init uidfake_init(void)
 		return -ENOMEM;
 
 	uidfake_debug_init(uidfake_debug);
-	pidhide_init();
 
 	netlink_init();
 	pr_info("uidfake: ready (%d hook(s))\n", hooks_install());

@@ -12,4 +12,3 @@ if [ -f "$KO" ] && [ -x "$MODDIR/lkmloader" ] && ! lsmod | grep -q '^hma_uidfake
 fi
 
 [ -x "$MODDIR/sync-tool" ] && "$MODDIR/sync-tool" >>"$LOG" 2>&1 &
-[ -x "$MODDIR/pidhide-loop.sh" ] && "$MODDIR/pidhide-loop.sh" >>"$LOG" 2>&1 &
